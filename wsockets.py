@@ -3,8 +3,39 @@ import websockets
 from config import update_config, read_config
 import json
 import traceback
+import server
+import noise
 import sqlite3
 import logging
+
+is_playing = False
+ws = None
+
+async def toggle_is_playing(toggle):
+    global is_playing
+    is_playing = toggle
+    try:
+        await ws.send(json.dumps({"action":"is_playing", "data":toggle}))
+    except:
+        print("no websocket connections during toggle_is_playing")
+
+async def init():
+    logging.info("updating web ui")
+    try:
+        sleep  = get_data({"table":"sleep"})
+        poops  = get_data({"table":"poops"})
+        wet_diaper  = get_data({"table":"wet_diaper"})
+        await ws.send(json.dumps({
+            "action":"init",
+            "sleep":sleep,
+            "is_playing":is_playing,
+            "poops":poops,
+            "wet_diaper":wet_diaper,
+            "settings": read_config()
+        }))
+    except:
+        print("no websocket connections during init")
+
 def get_data(data):
     db = sqlite3.connect("baby.db")
     s = db.cursor()
@@ -96,52 +127,48 @@ def update_table(data):
 
 
 async def socket(websocket, path):
-    while True:
-        message = await websocket.recv()
-        greeting = f"Hello from server!"
-        try:
-            data = json.loads(message)
-            logging.info(f"< client {data}")
-            result = None
-            if data["action"] == "init":
-                sleep  = get_data({"table":"sleep"})
-                poops  = get_data({"table":"poops"})
-                wet_diaper  = get_data({"table":"wet_diaper"})
+    global ws
+    ws = websocket
+    try:
+        while True:
+            message = await websocket.recv()
+            greeting = f"Hello from server!"
+            try:
+                data = json.loads(message)
+                logging.info(f"< client {data}")
+                result = None
+                if data["action"] == "init":
+                    await init()
+                elif data["action"] == "settings":
+                    result = update_config(data["settings"])
+                    await websocket.send(result)
+                elif data["action"] == "update":
+                    result = update_table(message)
+                    await websocket.send(result)
+                elif data["action"] == "delete":
+                    result = delete_from_table(message)
+                    await websocket.send(result)
+                elif data["action"] == "insert":
+                    result = insert_into_table(message)
+                    await websocket.send(result)
+                elif data["action"] == "toggle_noise":
+                    await toggle_is_playing(not data['data'])
+                    server.toggle_white_noise()
+
+            except Exception as ex:
+                logging.error(''.join(traceback.format_exception(etype=type(ex), value=ex, tb=ex.__traceback__)))
                 await websocket.send(json.dumps({
-                    "action":"init",
-                    "sleep":sleep,
-                    "poops":poops,
-                    "wet_diaper":wet_diaper,
-                    "settings": read_config()
-                }))
-            elif data["action"] == "settings":
-                result = update_config(data["settings"])
-                await websocket.send(result)
-            elif data["action"] == "update":
-                result = update_table(message)
-                await websocket.send(result)
-            elif data["action"] == "delete":
-                result = delete_from_table(message)
-                await websocket.send(result)
-            elif data["action"] == "insert":
-                result = insert_into_table(message)
-                await websocket.send(result)
-
-        except Exception as ex:
-            print(''.join(traceback.format_exception(etype=type(ex), value=ex, tb=ex.__traceback__)))
+                "action":"error",
+                "message": f"ERROR on websocket {ex}" }))
+                break
             await websocket.send(json.dumps({
-            "action":"error",
-            "message": f"ERROR on websocket {ex}" }))
-            break
-        except JSONDecodeError as e:
-            logging.error(f"wsockets json error: {e}")
-            await websocket.send(json.dumps({
-            "action":"error",
-            "message": f"ERROR on websocket JSON {e}" }))
-
-        await websocket.send(json.dumps({
-            "action":"console",
-            "message": greeting }))
+                "action":"console",
+                "message": greeting }))
+    except websockets.exceptions.ConnectionClosedOK as c:
+        logging.info("Connection to pi baby server closed")
+    except Exception as ex:
+        logging.error(f"General Error during websocket loop")
+        logging.error(''.join(traceback.format_exception(etype=type(ex), value=ex, tb=ex.__traceback__)))
 
 def run():
     start_server = websockets.serve(socket, "localhost", 8765)

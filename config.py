@@ -4,7 +4,6 @@ from os import walk
 import json
 import noise
 
-
 # default values
 conf = {
     "long_press": 1.2, # long press in seconds

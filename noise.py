@@ -1,7 +1,12 @@
 from pydub import AudioSegment
+import asyncio
 import logging
 import simpleaudio
 import time
+import json
+import wsockets
+
+is_sleeping = False
 
 def intialize_noise(audio_file, volume_offset):
     global white_noise
@@ -24,11 +29,28 @@ def play_white_noise():
     print("play_white_noise")
     global white_noise
     global white_noise_play
-    try:
-        if white_noise_play is not None:
-            print("white noise is already playing")
-            time.sleep(1)
-        else:
+    global is_sleeping
+    is_sleeping = True
+    while is_sleeping:
+
+        try:
+            if white_noise_play is not None:
+                print("white noise is already playing")
+                time.sleep(1)
+            else:
+                try:
+                    print("starting white noise")
+                    white_noise_play = simpleaudio.play_buffer(
+                        white_noise.raw_data,
+                        num_channels=white_noise.channels,
+                        bytes_per_sample=white_noise.sample_width,
+                        sample_rate=white_noise.frame_rate
+                    )
+                    white_noise_play.wait_done()
+                    white_noise_play = None
+                except Exception as e:
+                    logging.error(f"Error on audio playback: {e}")
+        except:
             try:
                 print("starting white noise")
                 white_noise_play = simpleaudio.play_buffer(
@@ -37,35 +59,16 @@ def play_white_noise():
                     bytes_per_sample=white_noise.sample_width,
                     sample_rate=white_noise.frame_rate
                 )
+                white_noise_play.wait_done()
+                white_noise_play = None
             except Exception as e:
                 logging.error(f"Error on audio playback: {e}")
-    except:
-        try:
-            print("starting white noise")
-            white_noise_play = simpleaudio.play_buffer(
-                white_noise.raw_data,
-                num_channels=white_noise.channels,
-                bytes_per_sample=white_noise.sample_width,
-                sample_rate=white_noise.frame_rate
-            )
-        except Exception as e:
-            logging.error(f"Error on audio playback: {e}")
-
-
-def wait_for_done():
-    global white_noise_play
-    try:
-        if white_noise_play is not None:
-            print("wait_for_done is waiting")
-            white_noise_play.wait_done()
-            print("wait_for_done is done")
-            white_noise_play = None
-    except:
-        print("wait_for_done white noise is not playing")
 
 
 def stop_white_noise():
     global white_noise_play
+    global is_sleeping
+    is_sleeping = False
     try:
         white_noise_play.stop()
         white_noise_play = None

@@ -1,6 +1,7 @@
 import keyboard
 import time
 import datetime
+import asyncio
 from threading import Timer
 import threading
 from pydub import AudioSegment
@@ -8,6 +9,7 @@ from pydub.playback import play
 import logging
 import sqlite3
 import wsockets as ws
+import state
 from config import conf, read_config
 import noise
 logging.basicConfig(level=logging.INFO)
@@ -20,49 +22,62 @@ stime = 0
 etime = 0
 is_timer = False
 action = False
-is_sleeping = False
 button_presses = 0
-white_noise_play = None
-sleep_start = 0
-sleep_end = 0
-sleep_start_timestamp = None
-last_table = None
+
+def update_web():
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        loop.create_task(ws.init())
+    else:
+        asyncio.run(ws.init())
 
 def toggle_white_noise():
-    global is_sleeping
-    global white_noise_play
-    global sleep_start
-    global sleep_end
-    global sleep_start_timestamp
-    global last_table
     db = sqlite3.connect("baby.db")
     s = db.cursor()
-    is_sleeping = not is_sleeping
-    logging.info(f"toggle white noise play white noise: {is_sleeping}")
     play(sound_boop)
-    if is_sleeping:
-        sleep_start = time.perf_counter()
-        sleep_start_timestamp = datetime.datetime.now().isoformat()
-        while is_sleeping:
-            noise.play_white_noise()
-            noise.wait_for_done()
+    if not noise.is_sleeping:
+        state.sleep_start = time.perf_counter()
+        state.sleep_start_timestamp = datetime.datetime.now().isoformat()
+        x = threading.Thread(target=noise.play_white_noise)
+        x.start()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # if cleanup: 'RuntimeError: There is no current event loop..'
+            loop = None
+        if loop and loop.is_running():
+            loop.create_task(ws.toggle_is_playing(True))
+        else:
+            asyncio.run(ws.toggle_is_playing(True))
+
     else:
-        sleep_end = time.perf_counter()
-        duration = sleep_end - sleep_start
+        state.sleep_end = time.perf_counter()
+        duration = state.sleep_end - state.sleep_start
         sleep_end_timestamp = datetime.datetime.now().isoformat()
         noise.stop_white_noise()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # if cleanup: 'RuntimeError: There is no current event loop..'
+            loop = None
+        if loop and loop.is_running():
+            loop.create_task(ws.toggle_is_playing(False))
+        else:
+            asyncio.run(ws.toggle_is_playing(False))
+
         logging.info(f"""{duration} > {conf["sleep_track_limit"] * 60}: {duration > conf["sleep_track_limit"] * 60 }""")
         if duration > conf["sleep_track_limit"] * 60:
             s.execute(f"""INSERT INTO sleep (start_timestamp,end_timestamp)
-                      VALUES ('{sleep_start_timestamp}','{sleep_end_timestamp}')""")
+                      VALUES ('{state.sleep_start_timestamp}','{sleep_end_timestamp}')""")
             db.commit()
-            last_table = "sleep"
+            state.last_table = "sleep"
             rows = s.execute("SELECT * FROM sleep").fetchall()
-            logging.info(rows)
+            logging.debug(rows)
+        update_web()
 
 
 def log_wet_diaper():
-    global last_table
     logging.info("log wet diaper")
     db = sqlite3.connect("baby.db")
     s = db.cursor()
@@ -72,13 +87,13 @@ def log_wet_diaper():
     s.execute(f"""INSERT INTO wet_diaper (timestamp)
                 VALUES ('{wet_timestamp}')""")
     db.commit()
-    last_table = "wet_diaper"
+    state.last_table = "wet_diaper"
     rows = s.execute("SELECT * FROM wet_diaper").fetchall()
-    logging.info(rows)
+    logging.debug(rows)
+    update_web()
 
 
 def log_poopy_diaper():
-    global last_table
     logging.info("log poopy diaper")
     db = sqlite3.connect("baby.db")
     s = db.cursor()
@@ -89,26 +104,27 @@ def log_poopy_diaper():
     s.execute(f"""INSERT INTO poops (timestamp)
                 VALUES ('{poops_timestamp}')""")
     db.commit()
-    last_table = "poops"
+    state.last_table = "poops"
     rows = s.execute("SELECT * FROM poops").fetchall()
-    logging.info(rows)
+    logging.debug(rows)
+    update_web()
 
 
 def delete_last_logging():
     global action
-    global last_table
     action = False
-    logging.info(last_table)
-    if last_table is not None:
+    logging.info(state.last_table)
+    if state.last_table is not None:
         play(delete_beep) # TODO make this sound like a confirmation sound
         db = sqlite3.connect("baby.db")
         s = db.cursor()
         logging.info("delete last logging")
-        s.execute(f"DELETE FROM {last_table} WHERE id = (SELECT MAX(id) FROM {last_table});")
+        s.execute(f"DELETE FROM {state.last_table} WHERE id = (SELECT MAX(id) FROM {state.last_table});")
         db.commit()
-        rows = s.execute(f"SELECT * FROM {last_table}").fetchall()
-        logging.info(f"{last_table} : {rows}")
-        last_table = None
+        rows = s.execute(f"SELECT * FROM {state.last_table}").fetchall()
+        logging.debug(f"{state.last_table} : {rows}")
+        state.last_table = None
+        update_web()
 
 
 def button_sequence():
