@@ -6,17 +6,14 @@ import threading
 from pydub import AudioSegment
 from pydub.playback import play
 import logging
-import simpleaudio
 import sqlite3
 import wsockets as ws
-from config import conf
-from config import read_config
+from config import conf, read_config
+import noise
 logging.basicConfig(level=logging.INFO)
 
 sound_boop = AudioSegment.from_file('resources/boop.wav')
 delete_beep = AudioSegment.from_file('resources/delete.wav')
-white_noise = AudioSegment.from_file('resources/nature.wav')
-white_noise = white_noise.fade_in(2000).fade_out(3000)
 
 # State Variables
 stime = 0
@@ -47,20 +44,15 @@ def toggle_white_noise():
         sleep_start = time.perf_counter()
         sleep_start_timestamp = datetime.datetime.now().isoformat()
         while is_sleeping:
-            white_noise_play = simpleaudio.play_buffer(
-                white_noise.raw_data,
-                num_channels=white_noise.channels,
-                bytes_per_sample=white_noise.sample_width,
-                sample_rate=white_noise.frame_rate
-            )
-            white_noise_play.wait_done()
+            noise.play_white_noise()
+            noise.wait_for_done()
     else:
         sleep_end = time.perf_counter()
         duration = sleep_end - sleep_start
         sleep_end_timestamp = datetime.datetime.now().isoformat()
-        white_noise_play.stop()
-        logging.info(f"""{duration} > {conf["sleep_track_limit"]}: {duration > conf["sleep_track_limit"]}""")
-        if duration > conf["sleep_track_limit"]:
+        noise.stop_white_noise()
+        logging.info(f"""{duration} > {conf["sleep_track_limit"] * 60}: {duration > conf["sleep_track_limit"] * 60 }""")
+        if duration > conf["sleep_track_limit"] * 60:
             s.execute(f"""INSERT INTO sleep (start_timestamp,end_timestamp)
                       VALUES ('{sleep_start_timestamp}','{sleep_end_timestamp}')""")
             db.commit()
@@ -186,6 +178,7 @@ def print_pressed_keys(e):
 
 
 def main():
+    noise.intialize_noise(conf['selected_noise'], conf['volume_offset'])
     create_tables()
     read_config()
     # keyboard.hook(print_pressed_keys)
