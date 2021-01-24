@@ -38,7 +38,7 @@ def toggle_white_noise():
     db = sqlite3.connect("baby.db")
     s = db.cursor()
     play(sound_boop)
-    if not noise.is_sleeping:
+    if not state.is_sleeping:
         state.sleep_start = time.perf_counter()
         state.sleep_start_timestamp = datetime.datetime.now().isoformat()
         x = threading.Thread(target=noise.play_white_noise)
