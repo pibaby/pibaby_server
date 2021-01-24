@@ -7,7 +7,6 @@ __pycache__/
 *.so
 
 baby.db
-config.py
 # Distribution / packaging
 .Python
 build/
