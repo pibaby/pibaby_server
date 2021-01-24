@@ -1,6 +1,7 @@
 from pydub import AudioSegment
 import logging
 import simpleaudio
+import time
 
 def intialize_noise(audio_file, volume_offset):
     global white_noise
@@ -20,23 +21,45 @@ def intialize_noise(audio_file, volume_offset):
         print("white noise is not playing")
 
 def play_white_noise():
+    print("play_white_noise")
     global white_noise
     global white_noise_play
     try:
-        white_noise_play = simpleaudio.play_buffer(
-            white_noise.raw_data,
-            num_channels=white_noise.channels,
-            bytes_per_sample=white_noise.sample_width,
-            sample_rate=white_noise.frame_rate
-        )
-    except Exception as e:
-        logging.error(f"Error on audio playback: {e}")
+        if white_noise_play is not None:
+            print("white noise is already playing")
+            time.sleep(1)
+        else:
+            try:
+                print("starting white noise")
+                white_noise_play = simpleaudio.play_buffer(
+                    white_noise.raw_data,
+                    num_channels=white_noise.channels,
+                    bytes_per_sample=white_noise.sample_width,
+                    sample_rate=white_noise.frame_rate
+                )
+            except Exception as e:
+                logging.error(f"Error on audio playback: {e}")
+    except:
+        try:
+            print("starting white noise")
+            white_noise_play = simpleaudio.play_buffer(
+                white_noise.raw_data,
+                num_channels=white_noise.channels,
+                bytes_per_sample=white_noise.sample_width,
+                sample_rate=white_noise.frame_rate
+            )
+        except Exception as e:
+            logging.error(f"Error on audio playback: {e}")
+
 
 def wait_for_done():
     global white_noise_play
     try:
         if white_noise_play is not None:
+            print("wait_for_done is waiting")
             white_noise_play.wait_done()
+            print("wait_for_done is done")
+            white_noise_play = None
     except:
         print("wait_for_done white noise is not playing")
 
