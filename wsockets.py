@@ -10,12 +10,16 @@ import logging
 
 is_playing = False
 ws = None
+connected = set()
+
+async def send(message):
+    await asyncio.wait([ws.send(message) for ws in connected])
 
 async def toggle_is_playing(toggle):
     global is_playing
     is_playing = toggle
     try:
-        await ws.send(json.dumps({"action":"is_playing", "data":toggle}))
+        await send(json.dumps({"action":"is_playing", "data":toggle}))
     except:
         print("no websocket connections during toggle_is_playing")
 
@@ -25,7 +29,7 @@ async def init():
         sleep  = get_data({"table":"sleep"})
         poops  = get_data({"table":"poops"})
         wet_diaper  = get_data({"table":"wet_diaper"})
-        await ws.send(json.dumps({
+        await send(json.dumps({
             "action":"init",
             "sleep":sleep,
             "is_playing":is_playing,
@@ -129,6 +133,7 @@ def update_table(data):
 async def socket(websocket, path):
     global ws
     ws = websocket
+    connected.add(websocket)
     try:
         while True:
             message = await websocket.recv()
@@ -141,34 +146,37 @@ async def socket(websocket, path):
                     await init()
                 elif data["action"] == "settings":
                     result = update_config(data["settings"])
-                    await websocket.send(result)
+                    await send(result)
+                    await init()
                 elif data["action"] == "update":
                     result = update_table(message)
-                    await websocket.send(result)
+                    await send(result)
                 elif data["action"] == "delete":
                     result = delete_from_table(message)
-                    await websocket.send(result)
+                    await send(result)
                 elif data["action"] == "insert":
                     result = insert_into_table(message)
-                    await websocket.send(result)
+                    await send(result)
                 elif data["action"] == "toggle_noise":
                     await toggle_is_playing(not data['data'])
                     server.toggle_white_noise()
 
             except Exception as ex:
                 logging.error(''.join(traceback.format_exception(etype=type(ex), value=ex, tb=ex.__traceback__)))
-                await websocket.send(json.dumps({
+                await send(json.dumps({
                 "action":"error",
                 "message": f"ERROR on websocket {ex}" }))
                 break
-            await websocket.send(json.dumps({
+            await send(json.dumps({
                 "action":"console",
                 "message": greeting }))
     except websockets.exceptions.ConnectionClosedOK as c:
         logging.info("Connection to pi baby server closed")
+        connected.remove(websocket)
     except Exception as ex:
         logging.error(f"General Error during websocket loop")
         logging.error(''.join(traceback.format_exception(etype=type(ex), value=ex, tb=ex.__traceback__)))
+        connected.remove(websocket)
 
 def run():
     start_server = websockets.serve(socket, "localhost", 8765)
