@@ -1,2 +1,2 @@
-# pibaby_server
-Server component for the Pi Baby application
+#  Pi Baby Server 
+<img src="./public/icon.svg" alt="pi baby icon" width="50"/>
