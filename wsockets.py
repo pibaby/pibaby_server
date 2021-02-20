@@ -4,7 +4,6 @@ from config import update_config, read_config
 import json
 import traceback
 import server
-import noise
 import sqlite3
 import logging
 
@@ -12,33 +11,37 @@ is_playing = False
 ws = None
 connected = set()
 
+
 async def send(message):
     await asyncio.wait([ws.send(message) for ws in connected])
+
 
 async def toggle_is_playing(toggle):
     global is_playing
     is_playing = toggle
     try:
-        await send(json.dumps({"action":"is_playing", "data":toggle}))
-    except:
+        await send(json.dumps({"action": "is_playing", "data": toggle}))
+    except Exception:
         print("no websocket connections during toggle_is_playing")
+
 
 async def init():
     logging.info("updating web ui")
     try:
-        sleep  = get_data({"table":"sleep"})
-        poops  = get_data({"table":"poops"})
-        wet_diaper  = get_data({"table":"wet_diaper"})
+        sleep = get_data({"table": "sleep"})
+        poops = get_data({"table": "poops"})
+        wet_diaper = get_data({"table": "wet_diaper"})
         await send(json.dumps({
-            "action":"init",
-            "sleep":sleep,
-            "is_playing":is_playing,
-            "poops":poops,
-            "wet_diaper":wet_diaper,
+            "action": "init",
+            "sleep": sleep,
+            "is_playing": is_playing,
+            "poops": poops,
+            "wet_diaper": wet_diaper,
             "settings": read_config()
         }))
-    except:
+    except Exception:
         print("no websocket connections during init")
+
 
 def get_data(data):
     db = sqlite3.connect("baby.db")
@@ -58,8 +61,10 @@ def get_data(data):
     logging.info(rows)
     return rows
 
+
 def delete_from_table(data):
-    result = json.dumps({"action":"success","message":f"Event has been deleted"})
+    result = json.dumps({"action": "success",
+                         "message": "Event has been deleted"})
     try:
         update = json.loads(data)['data']
         print(update)
@@ -71,11 +76,14 @@ def delete_from_table(data):
         """)
         db.commit()
     except Exception as e:
-        result = json.dumps({"action":"error","message":f"ERROR delete_from_table: {e}"})
+        result = json.dumps({"action": "error",
+                             "message": f"ERROR delete_from_table: {e}"})
     return result
 
+
 def insert_into_table(data):
-    result = json.dumps({"action":"success","message":"Event has been saved"})
+    result = json.dumps({"action": "success",
+                         "message": "Event has been saved"})
     try:
         update = json.loads(data)['data']
         print(update)
@@ -94,11 +102,14 @@ def insert_into_table(data):
             """)
             db.commit()
     except Exception as e:
-        result = json.dumps({"action":"error","message":f"ERROR insert_into_table: {e}"})
+        result = json.dumps({"action": "error",
+                             "message": f"ERROR insert_into_table: {e}"})
     return result
 
+
 def update_table(data):
-    result =json.dumps({"action":"success","message":"Event has been updated"})
+    result = json.dumps({"action": "success",
+                        "message": "Event has been updated"})
     try:
         update = json.loads(data)['data']
         print(update)
@@ -126,7 +137,8 @@ def update_table(data):
             """)
             db.commit()
     except Exception as e:
-        result = json.dumps({"action":"error","message":f"ERROR update_table {e}"})
+        result = json.dumps({"action": "error",
+                             "message": f"ERROR update_table {e}"})
     return result
 
 
@@ -137,7 +149,7 @@ async def socket(websocket, path):
     try:
         while True:
             message = await websocket.recv()
-            greeting = f"Hello from server!"
+            greeting = "Hello from server!"
             try:
                 data = json.loads(message)
                 logging.info(f"< client {data}")
@@ -164,25 +176,25 @@ async def socket(websocket, path):
             except Exception as ex:
                 logging.error(''.join(traceback.format_exception(etype=type(ex), value=ex, tb=ex.__traceback__)))
                 await send(json.dumps({
-                "action":"error",
-                "message": f"ERROR on websocket {ex}" }))
+                    "action": "error",
+                    "message": f"ERROR on websocket {ex}"}))
                 break
             await send(json.dumps({
-                "action":"console",
-                "message": greeting }))
+                "action": "console",
+                "message": greeting}))
     except websockets.exceptions.ConnectionClosedOK as c:
-        logging.info("Connection to pi baby server closed")
+        logging.info(f"Connection to pi baby server closed {c}")
         connected.remove(websocket)
     except Exception as ex:
-        logging.error(f"General Error during websocket loop")
+        logging.error("General Error during websocket loop")
         logging.error(''.join(traceback.format_exception(etype=type(ex), value=ex, tb=ex.__traceback__)))
         connected.remove(websocket)
+    except json.JSONDecodeError as j:
+        logging.error(f"Json decoding error: {j}")
+
 
 def run():
     start_server = websockets.serve(socket, "localhost", 8765)
-    print(f"serving localhost on port 8765")
+    print("serving localhost on port 8765")
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
-
-
-

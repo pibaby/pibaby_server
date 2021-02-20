@@ -24,6 +24,7 @@ is_timer = False
 action = False
 button_presses = 0
 
+
 def update_web():
     try:
         loop = asyncio.get_running_loop()
@@ -33,6 +34,7 @@ def update_web():
         loop.create_task(ws.init())
     else:
         asyncio.run(ws.init())
+
 
 def toggle_white_noise():
     db = sqlite3.connect("baby.db")
